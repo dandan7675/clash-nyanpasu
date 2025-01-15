@@ -1,12 +1,11 @@
 use crate::{
     config::*,
-    utils::{dialog::migrate_dialog, dirs, help},
+    utils::{dirs, help},
 };
 use anyhow::{anyhow, Context, Result};
 use fs_extra::dir::CopyOptions;
 #[cfg(windows)]
 use runas::Command as RunasCommand;
-use rust_i18n::t;
 use std::{
     fs,
     io::{BufReader, Write},
@@ -104,27 +103,27 @@ pub fn run_pending_migrations() -> Result<()> {
 /// before tauri setup
 pub fn init_config() -> Result<()> {
     // Check if old config dir exist and new config dir is not exist
-    let mut old_app_dir: Option<PathBuf> = None;
-    let mut app_dir: Option<PathBuf> = None;
-    crate::dialog_err!(dirs::old_app_home_dir().map(|_old_app_dir| {
-        old_app_dir = Some(_old_app_dir);
-    }));
+    // let mut old_app_dir: Option<PathBuf> = None;
+    // let mut app_dir: Option<PathBuf> = None;
+    // crate::dialog_err!(dirs::old_app_home_dir().map(|_old_app_dir| {
+    //     old_app_dir = Some(_old_app_dir);
+    // }));
 
-    crate::dialog_err!(dirs::app_home_dir().map(|_app_dir| {
-        app_dir = Some(_app_dir);
-    }));
+    // crate::dialog_err!(dirs::app_home_dir().map(|_app_dir| {
+    //     app_dir = Some(_app_dir);
+    // }));
 
-    if let (Some(app_dir), Some(old_app_dir)) = (app_dir, old_app_dir) {
-        let msg = t!("dialog.migrate");
-        if !app_dir.exists() && old_app_dir.exists() && migrate_dialog(msg.to_string().as_str()) {
-            if let Err(e) = do_config_migration(&old_app_dir, &app_dir) {
-                super::dialog::error_dialog(format!("failed to do migration: {:?}", e))
-            }
-        }
-        if !app_dir.exists() {
-            let _ = fs::create_dir_all(app_dir);
-        }
-    }
+    // if let (Some(app_dir), Some(old_app_dir)) = (app_dir, old_app_dir) {
+    //     let msg = t!("dialog.migrate");
+    //     if !app_dir.exists() && old_app_dir.exists() && migrate_dialog(msg.to_string().as_str()) {
+    //         if let Err(e) = do_config_migration(&old_app_dir, &app_dir) {
+    //             super::dialog::error_dialog(format!("failed to do migration: {:?}", e))
+    //         }
+    //     }
+    //     if !app_dir.exists() {
+    //         let _ = fs::create_dir_all(app_dir);
+    //     }
+    // }
 
     // init log
     logging::init().unwrap();
@@ -155,7 +154,7 @@ pub fn init_config() -> Result<()> {
 
     crate::log_err!(dirs::profiles_path().map(|path| {
         if !path.exists() {
-            help::save_yaml(&path, &IProfiles::template(), Some("# Clash Nyanpasu"))?;
+            help::save_yaml(&path, &Profiles::default(), Some("# Clash Nyanpasu"))?;
         }
         <Result<()>>::Ok(())
     }));
@@ -191,7 +190,7 @@ pub fn init_resources() -> Result<()> {
             match fs::copy(&src_path, &dest_path) {
                 Ok(_) => log::debug!(target: "app", "resources copied '{file}'"),
                 Err(err) => {
-                    log::error!(target: "app", "failed to copy resources '{file}', {err}")
+                    log::error!(target: "app", "failed to copy resources '{file}', {err:?}")
                 }
             };
         };

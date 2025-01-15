@@ -20,7 +20,6 @@ use std::{
 };
 use tauri::{async_runtime::block_on, App, AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_shell::ShellExt;
-
 static OPEN_WINDOWS_COUNTER: AtomicU16 = AtomicU16::new(0);
 
 pub fn is_window_opened() -> bool {
@@ -32,37 +31,52 @@ pub fn reset_window_open_counter() {
 }
 
 #[cfg(target_os = "macos")]
-fn set_window_controls_pos(window: cocoa::base::id, x: f64, y: f64) {
-    use cocoa::{
-        appkit::{NSView, NSWindow, NSWindowButton},
-        foundation::NSRect,
+fn set_window_controls_pos(
+    window: objc2::rc::Retained<objc2_app_kit::NSWindow>,
+    x: f64,
+    y: f64,
+) -> anyhow::Result<()> {
+    use objc2_app_kit::NSWindowButton;
+    use objc2_foundation::NSRect;
+    let close = window
+        .standardWindowButton(NSWindowButton::NSWindowCloseButton)
+        .ok_or(anyhow::anyhow!("failed to get close button"))?;
+    let miniaturize = window
+        .standardWindowButton(NSWindowButton::NSWindowMiniaturizeButton)
+        .ok_or(anyhow::anyhow!("failed to get miniaturize button"))?;
+    let zoom = window
+        .standardWindowButton(NSWindowButton::NSWindowZoomButton)
+        .ok_or(anyhow::anyhow!("failed to get zoom button"))?;
+
+    let title_bar_container_view = unsafe {
+        close
+            .superview()
+            .and_then(|view| view.superview())
+            .ok_or(anyhow::anyhow!("failed to get title bar container view"))?
     };
 
+    let close_rect = close.frame();
+    let button_height = close_rect.size.height;
+
+    let title_bar_frame_height = button_height + y;
+    let mut title_bar_rect = title_bar_container_view.frame();
+    title_bar_rect.size.height = title_bar_frame_height;
+    title_bar_rect.origin.y = window.frame().size.height - title_bar_frame_height;
     unsafe {
-        let close = window.standardWindowButton_(NSWindowButton::NSWindowCloseButton);
-        let miniaturize = window.standardWindowButton_(NSWindowButton::NSWindowMiniaturizeButton);
-        let zoom = window.standardWindowButton_(NSWindowButton::NSWindowZoomButton);
+        title_bar_container_view.setFrame(title_bar_rect);
+    }
 
-        let title_bar_container_view = close.superview().superview();
+    let space_between = miniaturize.frame().origin.x - close.frame().origin.x;
+    let window_buttons = vec![close, miniaturize, zoom];
 
-        let close_rect: NSRect = msg_send![close, frame];
-        let button_height = close_rect.size.height;
-
-        let title_bar_frame_height = button_height + y;
-        let mut title_bar_rect = NSView::frame(title_bar_container_view);
-        title_bar_rect.size.height = title_bar_frame_height;
-        title_bar_rect.origin.y = NSView::frame(window).size.height - title_bar_frame_height;
-        let _: () = msg_send![title_bar_container_view, setFrame: title_bar_rect];
-
-        let window_buttons = vec![close, miniaturize, zoom];
-        let space_between = NSView::frame(miniaturize).origin.x - NSView::frame(close).origin.x;
-
-        for (i, button) in window_buttons.into_iter().enumerate() {
-            let mut rect: NSRect = NSView::frame(button);
-            rect.origin.x = x + (i as f64 * space_between);
+    for (i, button) in window_buttons.into_iter().enumerate() {
+        let mut rect: NSRect = button.frame();
+        rect.origin.x = x + (i as f64 * space_between);
+        unsafe {
             button.setFrameOrigin(rect.origin);
         }
     }
+    Ok(())
 }
 
 pub fn find_unused_port() -> Result<u16> {
@@ -86,13 +100,15 @@ pub fn find_unused_port() -> Result<u16> {
 pub fn resolve_setup(app: &mut App) {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    #[cfg(target_os = "macos")]
+    let app_handle = app.app_handle().clone();
     app.listen("react_app_mounted", move |_| {
         tracing::debug!("Frontend React App is mounted, reset open window counter");
         reset_window_open_counter();
         #[cfg(target_os = "macos")]
-        unsafe {
+        log_err!(app_handle.run_on_main_thread(move || {
             crate::utils::dock::macos::show_dock_icon();
-        }
+        }));
     });
 
     handle::Handle::global().init(app.app_handle().clone());
@@ -125,6 +141,7 @@ pub fn resolve_setup(app: &mut App) {
     let mut mapping = Mapping::new();
     mapping.insert("mixed-port".into(), port.into());
     Config::clash().data().patch_config(mapping);
+    let _ = Config::clash().latest().prepare_external_controller_port();
     let _ = Config::clash().data().save_config();
 
     // 启动核心
@@ -248,23 +265,6 @@ pub fn create_window(app_handle: &AppHandle) {
     #[cfg(target_os = "linux")]
     let win_res = builder.decorations(true).transparent(false).build();
 
-    #[cfg(target_os = "macos")]
-    fn set_controls_and_log_error(app_handle: &tauri::AppHandle, window_name: &str) {
-        match app_handle
-            .get_webview_window(window_name)
-            .unwrap()
-            .ns_window()
-        {
-            Ok(raw_window) => {
-                let window_id: cocoa::base::id = raw_window as _;
-                set_window_controls_pos(window_id, 26.0, 26.0);
-            }
-            Err(err) => {
-                log::error!(target: "app", "failed to get ns_window, {err}");
-            }
-        }
-    }
-
     match win_res {
         Ok(win) => {
             use tauri::{PhysicalPosition, PhysicalSize};
@@ -336,20 +336,15 @@ pub fn create_window(app_handle: &AppHandle) {
 
             #[cfg(target_os = "macos")]
             {
-                set_controls_and_log_error(&app_handle, "main");
-
-                let app_handle_clone = app_handle.clone();
-                win.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Resized(_) = event {
-                        set_controls_and_log_error(&app_handle_clone, "main");
-                    }
-                });
+                tracing::trace!("setup traffic lights pos");
+                let mtm = objc2_foundation::MainThreadMarker::new().unwrap();
+                crate::window::macos::setup_traffic_lights_pos(win.clone(), (26.0, 26.0), mtm);
             }
 
             OPEN_WINDOWS_COUNTER.fetch_add(1, Ordering::Release);
         }
         Err(err) => {
-            log::error!(target: "app", "failed to create window, {err}");
+            log::error!(target: "app", "failed to create window, {err:?}");
             if let Some(win) = app_handle.get_webview_window("main") {
                 // Cleanup window if failed to create, it's a workaround for tauri bug
                 log_err!(
@@ -447,7 +442,7 @@ pub async fn resolve_core_version(app_handle: &AppHandle, core_type: &ClashCore)
         ClashCore::ClashPremium | ClashCore::Mihomo | ClashCore::MihomoAlpha => {
             shell.sidecar(core)?.args(["-v"])
         }
-        ClashCore::ClashRs => shell.sidecar(core)?.args(["-V"]),
+        ClashCore::ClashRs | ClashCore::ClashRsAlpha => shell.sidecar(core)?.args(["-V"]),
     };
     let out = cmd.output().await?;
     if !out.status.success() {

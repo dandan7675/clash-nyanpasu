@@ -1,17 +1,10 @@
-#![feature(auto_traits, negative_impls)]
+#![feature(auto_traits, negative_impls, let_chains)]
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
-
-#[cfg(target_os = "macos")]
-#[macro_use]
-extern crate cocoa;
-
-#[cfg(target_os = "macos")]
-#[macro_use]
-extern crate objc;
-
+// This lint was needed by ambassador
+#![allow(clippy::duplicated_attributes)]
 mod cmds;
 mod config;
 mod consts;
@@ -21,14 +14,14 @@ mod feat;
 mod ipc;
 mod server;
 mod utils;
+mod window;
 
 use crate::{
     config::Config,
     core::handle::Handle,
     utils::{init, resolve},
 };
-use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
+use tauri::{Emitter, Manager};
 use utils::resolve::{is_window_opened, reset_window_open_counter};
 
 rust_i18n::i18n!("../../locales");
@@ -116,7 +109,6 @@ pub fn run() -> std::io::Result<()> {
     crate::log_err!(init::init_config());
 
     // Panic Hook to show a panic dialog and save logs
-    let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         use std::backtrace::{Backtrace, BacktraceStatus};
         let payload = panic_info.payload();
@@ -132,7 +124,7 @@ pub fn run() -> std::io::Result<()> {
 
         let location = panic_info.location().map(|l| l.to_string());
         let (backtrace, note) = {
-            let backtrace = Backtrace::capture();
+            let backtrace = Backtrace::force_capture();
             let note = (backtrace.status() == BacktraceStatus::Disabled)
                 .then_some("run with RUST_BACKTRACE=1 environment variable to display a backtrace");
             (Some(backtrace), note)
@@ -145,19 +137,37 @@ pub fn run() -> std::io::Result<()> {
             panic.note = note,
             "A panic occurred",
         );
-        utils::dialog::panic_dialog(&format!(
-            "payload: {:#?}\nlocation: {:?}\nbacktrace: {:#?}\n\nnote: {:?}",
-            payload, location, backtrace, note
-        ));
 
-        // cleanup the core manager
-        let task = std::thread::spawn(move || {
-            nyanpasu_utils::runtime::block_on(async {
-                let _ = crate::core::CoreManager::global().stop_core().await;
-            });
-        });
-        let _ = task.join();
-        default_panic(panic_info);
+        // This is a workaround for the upstream issue: https://github.com/tauri-apps/tauri/issues/10546
+        if let Some(s) = payload.as_ref()
+            && s.contains("PostMessage failed ; is the messages queue full?")
+        {
+            return;
+        }
+
+        // FIXME: maybe move this logic to a util function?
+        let msg = format!(
+            "Oops, we encountered some issues and program will exit immediately.\n\npayload: {:#?}\nlocation: {:?}\nbacktrace: {:#?}\n\n",
+            payload, location, backtrace,
+        );
+        let child = std::process::Command::new(tauri::utils::platform::current_exe().unwrap())
+            .arg("panic-dialog")
+            .arg(msg.as_str())
+            .spawn();
+        // fallback to show a dialog directly
+        if child.is_err() {
+            utils::dialog::panic_dialog(msg.as_str());
+        }
+
+        match Handle::global().app_handle.lock().as_ref() {
+            Some(app_handle) => {
+                app_handle.exit(1);
+            }
+            None => {
+                log::error!("app handle is not initialized");
+                std::process::exit(1);
+            }
+        }
     }));
 
     let verge = { Config::verge().latest().language.clone().unwrap() };
@@ -248,7 +258,6 @@ pub fn run() -> std::io::Result<()> {
             ipc::open_core_dir,
             // cmds::kill_sidecar,
             ipc::restart_sidecar,
-            ipc::grant_permission,
             // clash
             ipc::get_clash_info,
             ipc::get_clash_logs,
@@ -257,7 +266,7 @@ pub fn run() -> std::io::Result<()> {
             ipc::get_runtime_config,
             ipc::get_runtime_yaml,
             ipc::get_runtime_exists,
-            ipc::get_runtime_logs,
+            ipc::get_postprocessing_output,
             ipc::clash_api_get_proxy_delay,
             ipc::uwp::invoke_uwp_tool,
             // updater
@@ -280,6 +289,7 @@ pub fn run() -> std::io::Result<()> {
             ipc::create_profile,
             ipc::import_profile,
             ipc::reorder_profile,
+            ipc::reorder_profiles_by_list,
             ipc::update_profile,
             ipc::delete_profile,
             ipc::read_profile_file,
@@ -314,41 +324,43 @@ pub fn run() -> std::io::Result<()> {
             ipc::set_storage_item,
             ipc::remove_storage_item,
             ipc::mutate_proxies,
+            ipc::get_core_dir,
         ]);
 
     let app = builder
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
     app.run(|app_handle, e| match e {
-        tauri::RunEvent::ExitRequested { api, .. } => {
+        tauri::RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
             api.prevent_exit();
         }
-        tauri::RunEvent::Exit => {
-            resolve::resolve_reset();
+        tauri::RunEvent::ExitRequested { .. } => {
+            utils::help::cleanup_processes(app_handle);
         }
-        tauri::RunEvent::WindowEvent { label, event, .. } => {
-            if label == "main" {
-                match event {
-                    tauri::WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                        core::tray::on_scale_factor_changed(scale_factor);
-                    }
-                    tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
-                        log::debug!(target: "app", "window close requested");
-                        reset_window_open_counter();
-                        let _ = resolve::save_window_state(app_handle, true);
-                        #[cfg(target_os = "macos")]
-                        unsafe {
-                            crate::utils::dock::macos::hide_dock_icon();
-                        }
-                    }
-                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-                        log::debug!(target: "app", "window moved or resized");
-                        std::thread::sleep(std::time::Duration::from_nanos(1));
-                        let _ = resolve::save_window_state(app_handle, false);
-                    }
-                    _ => {}
-                }
+        tauri::RunEvent::WindowEvent { label, event, .. } if label == "main" => match event {
+            tauri::WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                core::tray::on_scale_factor_changed(scale_factor);
             }
+            tauri::WindowEvent::CloseRequested { .. } => {
+                log::debug!(target: "app", "window close requested");
+                let _ = resolve::save_window_state(app_handle, true);
+                #[cfg(target_os = "macos")]
+                crate::utils::dock::macos::hide_dock_icon();
+            }
+            tauri::WindowEvent::Destroyed => {
+                log::debug!(target: "app", "window destroyed");
+                reset_window_open_counter();
+            }
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                log::debug!(target: "app", "window moved or resized");
+                std::thread::sleep(std::time::Duration::from_nanos(1));
+                let _ = resolve::save_window_state(app_handle, false);
+            }
+            _ => {}
+        },
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => {
+            resolve::create_window(app_handle);
         }
         _ => {}
     });

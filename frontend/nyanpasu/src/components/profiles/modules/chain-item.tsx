@@ -1,10 +1,21 @@
-import { memo, useState, useTransition } from "react";
-import { useTranslation } from "react-i18next";
-import { Menu as MenuIcon } from "@mui/icons-material";
-import { LoadingButton } from "@mui/lab";
-import { alpha, ListItemButton, Menu, MenuItem, useTheme } from "@mui/material";
-import { Profile, useClash } from "@nyanpasu/interface";
-import { cleanDeepClickEvent } from "@nyanpasu/ui";
+import { useLongPress } from 'ahooks'
+import { Reorder, useDragControls } from 'framer-motion'
+import {
+  memo,
+  PointerEvent,
+  useCallback,
+  useRef,
+  useState,
+  useTransition,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import { Menu as MenuIcon } from '@mui/icons-material'
+import { LoadingButton } from '@mui/lab'
+import { alpha, ListItemButton, Menu, MenuItem, useTheme } from '@mui/material'
+import { Profile, useClash } from '@nyanpasu/interface'
+import { cleanDeepClickEvent } from '@nyanpasu/ui'
+
+const longPressDelay = 200
 
 export const ChainItem = memo(function ChainItem({
   item,
@@ -12,74 +23,116 @@ export const ChainItem = memo(function ChainItem({
   onClick,
   onChainEdit,
 }: {
-  item: Profile.Item;
-  selected?: boolean;
-  onClick: () => Promise<void>;
-  onChainEdit: () => void;
+  item: Profile.Item
+  selected?: boolean
+  onClick: () => Promise<void>
+  onChainEdit: () => void
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation()
 
-  const { palette } = useTheme();
+  const { palette } = useTheme()
 
-  const { deleteProfile, viewProfile } = useClash();
+  const { deleteProfile, viewProfile } = useClash()
 
-  const [isPending, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition()
 
   const handleClick = () => {
-    startTransition(onClick);
-  };
+    startTransition(onClick)
+  }
 
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 
   const menuMapping = {
     Apply: () => handleClick(),
-    "Edit Info": () => onChainEdit(),
-    "Open File": () => viewProfile(item.uid),
+    'Edit Info': () => onChainEdit(),
+    'Open File': () => viewProfile(item.uid),
     Delete: () => deleteProfile(item.uid),
-  };
+  }
 
   const handleMenuClick = (func: () => void) => {
-    setAnchorEl(null);
-    func();
-  };
+    setAnchorEl(null)
+    func()
+  }
+
+  // const controls = useDragControls();
+
+  const onLongPress = (e: PointerEvent) => {
+    cleanDeepClickEvent(e)
+    // controls.start(e);
+  }
+
+  const longPressTimerRef = useRef<number | null>(null)
 
   return (
     <>
-      <ListItemButton
-        className="!mb-2 !mt-2 !flex !justify-between gap-2"
-        sx={{
-          backgroundColor: selected
-            ? alpha(palette.primary.main, 0.3)
-            : alpha(palette.secondary.main, 0.1),
-          borderRadius: 4,
-
-          "&:hover": {
-            backgroundColor: selected
-              ? alpha(palette.primary.main, 0.5)
-              : undefined,
-          },
+      <Reorder.Item
+        css={{
+          zIndex: 100,
         }}
-        onClick={handleClick}
-        disabled={isPending}
+        value={item.uid}
+        // dragListener={false}
+        // dragControls={controls}
+        onPointerDown={(e: PointerEvent) => {
+          longPressTimerRef.current = window.setTimeout(() => {
+            longPressTimerRef.current = null
+            onLongPress(e as unknown as PointerEvent)
+          }, longPressDelay)
+        }}
+        onPointerUp={(e: PointerEvent) => {
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current!)
+          } else {
+            cleanDeepClickEvent(e)
+            longPressTimerRef.current = null
+          }
+        }}
       >
-        <div className="truncate py-1">
-          <span>{item.name}</span>
-        </div>
-
-        <LoadingButton
-          size="small"
-          color="primary"
-          className="!size-8 !min-w-0"
-          onClick={(e) => {
-            cleanDeepClickEvent(e);
-            setAnchorEl(e.currentTarget);
-          }}
-          loading={isPending}
+        <ListItemButton
+          className="!mb-2 !mt-2 !flex !justify-between gap-2"
+          sx={[
+            {
+              borderRadius: 4,
+            },
+            selected
+              ? {
+                  backgroundColor: alpha(palette.primary.main, 0.3),
+                }
+              : {
+                  backgroundColor: alpha(palette.secondary.main, 0.1),
+                },
+            selected
+              ? {
+                  '&:hover': {
+                    backgroundColor: alpha(palette.primary.main, 0.5),
+                  },
+                }
+              : {
+                  '&:hover': {
+                    backgroundColor: null,
+                  },
+                },
+          ]}
+          onClick={handleClick}
+          disabled={isPending}
         >
-          <MenuIcon />
-        </LoadingButton>
-      </ListItemButton>
+          <div className="truncate py-1">
+            <span>{item.name}</span>
+          </div>
 
+          <LoadingButton
+            size="small"
+            color="primary"
+            className="!size-8 !min-w-0"
+            loading={isPending}
+            onClick={(e) => {
+              cleanDeepClickEvent(e)
+              setAnchorEl(e!.currentTarget as HTMLButtonElement)
+            }}
+          >
+            <MenuIcon />
+          </LoadingButton>
+        </ListItemButton>
+      </Reorder.Item>
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
@@ -90,17 +143,17 @@ export const ChainItem = memo(function ChainItem({
             <MenuItem
               key={index}
               onClick={(e) => {
-                cleanDeepClickEvent(e);
-                handleMenuClick(func);
+                cleanDeepClickEvent(e)
+                handleMenuClick(func)
               }}
             >
               {t(key)}
             </MenuItem>
-          );
+          )
         })}
       </Menu>
     </>
-  );
-});
+  )
+})
 
-export default ChainItem;
+export default ChainItem

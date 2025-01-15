@@ -6,6 +6,8 @@ use crate::{
     utils::dirs,
 };
 use anyhow::{bail, Result};
+#[cfg(target_os = "macos")]
+use nyanpasu_ipc::api::network::set_dns::NetworkSetDnsReq;
 use nyanpasu_ipc::{
     api::{core::start::CoreStartReq, status::CoreState},
     utils::get_current_ts,
@@ -288,6 +290,7 @@ impl Instance {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn restart(&self) -> Result<()> {
         let state = self.state().await;
         if matches!(state.as_ref(), CoreState::Running) {
@@ -370,6 +373,8 @@ impl Instance {
 #[derive(Debug)]
 pub struct CoreManager {
     instance: Mutex<Option<Arc<Instance>>>,
+    #[cfg(target_os = "macos")]
+    previous_dns: tokio::sync::Mutex<Option<Vec<std::net::IpAddr>>>,
 }
 
 impl CoreManager {
@@ -377,6 +382,8 @@ impl CoreManager {
         static CORE_MANAGER: OnceCell<CoreManager> = OnceCell::new();
         CORE_MANAGER.get_or_init(|| CoreManager {
             instance: Mutex::new(None),
+            #[cfg(target_os = "macos")]
+            previous_dns: tokio::sync::Mutex::new(None),
         })
     }
 
@@ -457,53 +464,17 @@ impl CoreManager {
         Config::clash()
             .latest()
             .prepare_external_controller_port()?;
-        let instance = Arc::new(Instance::try_new(RunType::default())?);
+        let run_type = RunType::default();
+        let instance = Arc::new(Instance::try_new(run_type)?);
 
         #[cfg(target_os = "macos")]
         {
-            let enable_tun = Config::verge().latest().enable_tun_mode;
-            let enable_tun = enable_tun.unwrap_or(false);
-
-            if enable_tun {
-                log::debug!(target: "app", "try to set system dns");
-
-                let tun_device_ip = Config::clash().clone().latest().get_tun_device_ip();
-                // 执行 networksetup -setdnsservers Wi-Fi $tun_device_ip
-                let output = tokio::process::Command::new("networksetup")
-                    .args(["-setdnsservers", "Wi-Fi", tun_device_ip.as_str()])
-                    .output()
-                    .await?;
-
-                log::debug!(target: "app", "set system dns: {:?}", output);
-            }
+            let enable_tun = Config::verge().latest().enable_tun_mode.unwrap_or(false);
+            let _ = self
+                .change_default_network_dns(enable_tun)
+                .await
+                .inspect_err(|e| log::error!(target: "app", "failed to set system dns: {:?}", e));
         }
-        // FIXME: 重构服务模式
-        // #[cfg(target_os = "windows")]
-        // {
-        //     // 服务模式
-        //     let enable = { Config::verge().latest().enable_service_mode };
-        //     let enable = enable.unwrap_or(false);
-
-        //     *self.use_service_mode.lock() = enable;
-
-        //     if enable {
-        //         // 服务模式启动失败就直接运行 sidecar
-        //         log::debug!(target: "app", "try to run core in service mode");
-        //         let res = async {
-        //             win_service::check_service().await?;
-        //             win_service::run_core_by_service(&config_path).await
-        //         }
-        //         .await;
-        //         match res {
-        //             Ok(_) => return Ok(()),
-        //             Err(err) => {
-        //                 // 修改这个值，免得stop出错
-        //                 *self.use_service_mode.lock() = false;
-        //                 log::error!(target: "app", "{err}");
-        //             }
-        //         }
-        //     }
-        // }
 
         {
             let mut this = self.instance.lock();
@@ -530,7 +501,7 @@ impl CoreManager {
 
         if let Err(err) = self.run_core().await {
             log::error!(target: "app", "failed to recover clash core");
-            log::error!(target: "app", "{err}");
+            log::error!(target: "app", "{err:?}");
             tokio::time::sleep(Duration::from_secs(5)).await; // sleep 5s
             std::thread::spawn(move || {
                 block_on(async {
@@ -544,37 +515,11 @@ impl CoreManager {
 
     /// 停止核心运行
     pub async fn stop_core(&self) -> Result<()> {
-        // #[cfg(target_os = "windows")]
-        // if *self.use_service_mode.lock() {
-        //     log::debug!(target: "app", "stop the core by service");
-        //     tauri::async_runtime::block_on(async move {
-        //         log_err!(win_service::stop_core_by_service().await);
-        //     });
-        //     return Ok(());
-        // }
-
         #[cfg(target_os = "macos")]
-        {
-            let enable_tun = Config::verge().latest().enable_tun_mode;
-            let enable_tun = enable_tun.unwrap_or(false);
-
-            if enable_tun {
-                log::debug!(target: "app", "try to set system dns");
-
-                match tokio::process::Command::new("networksetup")
-                    .args(["-setdnsservers", "Wi-Fi", "Empty"])
-                    .output()
-                    .await
-                {
-                    Ok(_) => return Ok(()),
-                    Err(err) => {
-                        // 修改这个值，免得stop出错
-                        // *self.use_service_mode.lock() = false;
-                        log::error!(target: "app", "{err}");
-                    }
-                }
-            }
-        }
+        let _ = self
+            .change_default_network_dns(false)
+            .await
+            .inspect_err(|e| log::error!(target: "app", "failed to set system dns: {:?}", e));
         let instance = {
             let instance = self.instance.lock();
             instance.as_ref().cloned()
@@ -611,7 +556,7 @@ impl CoreManager {
                 Ok(())
             }
             Err(err) => {
-                tracing::error!("failed to change core: {err}");
+                tracing::error!("failed to change core: {err:?}");
                 Config::verge().discard();
                 Config::runtime().discard();
                 self.run_core().await?;
@@ -641,7 +586,7 @@ impl CoreManager {
                 Ok(_) => break,
                 Err(err) => {
                     if i < 4 {
-                        log::info!(target: "app", "{err}");
+                        log::info!(target: "app", "{err:?}");
                     } else {
                         bail!(err);
                     }
@@ -650,6 +595,64 @@ impl CoreManager {
             sleep(Duration::from_millis(250)).await;
         }
 
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    pub async fn change_default_network_dns(&self, enabled: bool) -> Result<()> {
+        use anyhow::Context;
+        use nyanpasu_utils::network::macos::*;
+
+        let run_type = RunType::default();
+
+        log::debug!(target: "app", "try to set system dns");
+        let default_device =
+            get_default_network_hardware_port().context("failed to get default network device")?;
+        log::debug!(target: "app", "current default network device: {:?}", default_device);
+        let tun_device_ip = Config::clash()
+            .clone()
+            .latest()
+            .get_tun_device_ip()
+            .parse::<std::net::IpAddr>()
+            .context("failed to parse tun device ip")?;
+        log::debug!(target: "app", "current tun device ip: {:?}", tun_device_ip);
+
+        let current_dns = get_dns(&default_device).context("failed to get current dns")?;
+        log::debug!(target: "app", "current dns: {:?}", current_dns);
+        let current_dns_contains_tun_device_ip = current_dns
+            .as_ref()
+            .is_some_and(|dns| dns.contains(&tun_device_ip));
+        let mut previous_dns = self.previous_dns.lock().await;
+        let previous_dns_clone = previous_dns.clone();
+        let new_dns = match enabled {
+            true if !current_dns_contains_tun_device_ip => {
+                *previous_dns = current_dns;
+                Some(Some(vec![tun_device_ip]))
+            }
+            false if current_dns_contains_tun_device_ip => Some(previous_dns.take()),
+            _ => None,
+        };
+        if let Some(new_dns) = new_dns {
+            log::debug!(target: "app", "set new dns: {:?}", new_dns);
+            let result = match run_type {
+                RunType::Service => {
+                    nyanpasu_ipc::client::shortcuts::Client::service_default()
+                        .set_dns(&NetworkSetDnsReq {
+                            // FIXME: improve this type notation
+                            dns_servers: new_dns
+                                .as_ref()
+                                .map(|dns| dns.iter().map(Cow::Borrowed).collect()),
+                        })
+                        .await
+                        .map_err(anyhow::Error::from)
+                }
+                _ => set_dns(&default_device, new_dns).map_err(anyhow::Error::from),
+            };
+            if let Err(e) = result.context("failed to set system dns") {
+                *previous_dns = previous_dns_clone;
+                return Err(e);
+            }
+        }
         Ok(())
     }
 }

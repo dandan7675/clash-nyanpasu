@@ -1,19 +1,19 @@
-import { useAtom } from "jotai";
-import { RefObject, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import ContentDisplay from "@/components/base/content-display";
+import { useAtom } from 'jotai'
+import { RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import ContentDisplay from '@/components/base/content-display'
 import {
   DelayButton,
   GroupList,
   NodeList,
   NodeListRef,
-} from "@/components/proxies";
-import ProxyGroupName from "@/components/proxies/proxy-group-name";
-import ScrollCurrentNode from "@/components/proxies/scroll-current-node";
-import SortSelector from "@/components/proxies/sort-selector";
-import { proxyGroupAtom } from "@/store";
-import { proxiesFilterAtom } from "@/store/proxies";
-import { Check } from "@mui/icons-material";
+} from '@/components/proxies'
+import ProxyGroupName from '@/components/proxies/proxy-group-name'
+import ScrollCurrentNode from '@/components/proxies/scroll-current-node'
+import SortSelector from '@/components/proxies/sort-selector'
+import { proxyGroupAtom } from '@/store'
+import { proxiesFilterAtom } from '@/store/proxies'
+import { Check } from '@mui/icons-material'
 import {
   alpha,
   Box,
@@ -21,14 +21,19 @@ import {
   ButtonGroup,
   TextField,
   useTheme,
-} from "@mui/material";
-import { Clash, useClashCore, useNyanpasu } from "@nyanpasu/interface";
-import { cn, SidePage } from "@nyanpasu/ui";
+} from '@mui/material'
+import { Clash, useClashCore, useNyanpasu } from '@nyanpasu/interface'
+import { cn, SidePage } from '@nyanpasu/ui'
+import { createFileRoute } from '@tanstack/react-router'
+
+export const Route = createFileRoute('/proxies')({
+  component: ProxyPage,
+})
 
 function SideBar() {
-  const { palette } = useTheme();
-  const [proxiesFilter, setProxiesFilter] = useAtom(proxiesFilterAtom);
-  const { t } = useTranslation();
+  const { palette } = useTheme()
+  const [proxiesFilter, setProxiesFilter] = useAtom(proxiesFilterAtom)
+  const { t } = useTranslation()
 
   return (
     <TextField
@@ -36,10 +41,10 @@ function SideBar() {
       fullWidth
       autoComplete="off"
       spellCheck="false"
-      placeholder={t("Filter conditions")}
+      placeholder={t('Filter conditions')}
       className="!pb-0"
       sx={{ input: { py: 1.2, fontSize: 14 } }}
-      value={proxiesFilter || ""}
+      value={proxiesFilter || ''}
       onChange={(e) =>
         setProxiesFilter(!e.target.value.trim().length ? null : e.target.value)
       }
@@ -49,34 +54,34 @@ function SideBar() {
           backgroundColor: alpha(palette.primary.main, 0.1),
 
           fieldset: {
-            border: "none",
+            border: 'none',
           },
         },
       }}
     />
-  );
+  )
 }
 
-export default function ProxyPage() {
-  const { t } = useTranslation();
+function ProxyPage() {
+  const { t } = useTranslation()
 
-  const { getCurrentMode, setCurrentMode } = useNyanpasu();
+  const { getCurrentMode, setCurrentMode } = useNyanpasu()
 
-  const { data, updateGroupDelay } = useClashCore();
+  const { data, updateGroupDelay } = useClashCore()
 
-  const [proxyGroup] = useAtom(proxyGroupAtom);
+  const [proxyGroup] = useAtom(proxyGroupAtom)
 
   const [group, setGroup] =
-    useState<Clash.Proxy<Clash.Proxy<string> | string>>();
+    useState<Clash.Proxy<Clash.Proxy<string> | string>>()
 
   useEffect(() => {
     if (getCurrentMode.global) {
-      setGroup(data?.global);
+      setGroup(data?.global)
     } else if (getCurrentMode.direct) {
-      setGroup(data?.direct);
+      setGroup(data?.direct)
     } else {
       if (proxyGroup.selector !== null) {
-        setGroup(data?.groups[proxyGroup.selector]);
+        setGroup(data?.groups[proxyGroup.selector])
       }
     }
   }, [
@@ -85,30 +90,29 @@ export default function ProxyPage() {
     getCurrentMode,
     data?.global,
     data?.direct,
-  ]);
+  ])
 
   const handleDelayClick = async () => {
-    await updateGroupDelay(proxyGroup.selector as number);
-  };
+    await updateGroupDelay(proxyGroup.selector as number)
+  }
 
-  const hasProxies = Boolean(data?.groups.length);
+  const hasProxies = Boolean(data?.groups.length)
 
-  const nodeListRef = useRef<NodeListRef>(null);
+  const nodeListRef = useRef<NodeListRef>(null)
 
-  const Header = () => {
+  const Header = useMemo(() => {
     const handleSwitch = (key: string) => {
-      setCurrentMode(key);
-    };
-
+      setCurrentMode(key)
+    }
     return (
       <Box display="flex" alignItems="center" gap={1}>
         <ButtonGroup size="small">
           {Object.entries(getCurrentMode).map(([key, enabled]) => (
             <Button
               key={key}
-              variant={enabled ? "contained" : "outlined"}
+              variant={enabled ? 'contained' : 'outlined'}
               onClick={() => handleSwitch(key)}
-              sx={{ textTransform: "capitalize" }}
+              sx={{ textTransform: 'capitalize' }}
             >
               {enabled && <Check className="-ml-2 mr-[0.1rem] scale-75" />}
               {t(key)}
@@ -116,17 +120,17 @@ export default function ProxyPage() {
           ))}
         </ButtonGroup>
       </Box>
-    );
-  };
+    )
+  }, [getCurrentMode, setCurrentMode, t])
 
-  const leftViewportRef = useRef<HTMLDivElement>(null);
+  const leftViewportRef = useRef<HTMLDivElement>(null)
 
-  const rightViewportRef = useRef<HTMLDivElement>(null);
+  const rightViewportRef = useRef<HTMLDivElement>(null)
 
   return (
     <SidePage
-      title={t("Proxy Groups")}
-      header={<Header />}
+      title={t('Proxy Groups')}
+      header={Header}
       sideBar={<SideBar />}
       leftViewportRef={leftViewportRef}
       rightViewportRef={rightViewportRef}
@@ -141,9 +145,9 @@ export default function ProxyPage() {
         !getCurrentMode.direct && (
           <div
             className={cn(
-              "absolute z-10 flex w-full items-center justify-between px-4 py-2 backdrop-blur",
-              "bg-gray-200/30 dark:bg-gray-900/30",
-              "!rounded-t-2xl",
+              'absolute z-10 flex w-full items-center justify-between px-4 py-2 backdrop-blur',
+              'bg-gray-200/30 dark:bg-gray-900/30',
+              '!rounded-t-2xl',
             )}
           >
             <div className="flex items-center gap-4">
@@ -153,7 +157,7 @@ export default function ProxyPage() {
             <div className="flex gap-2">
               <ScrollCurrentNode
                 onClick={() => {
-                  nodeListRef.current?.scrollToCurrent();
+                  nodeListRef.current?.scrollToCurrent()
                 }}
               />
 
@@ -174,11 +178,11 @@ export default function ProxyPage() {
             <DelayButton onClick={handleDelayClick} />
           </>
         ) : (
-          <ContentDisplay className="absolute" message="No Proxy" />
+          <ContentDisplay className="absolute" message={t('No Proxy')} />
         )
       ) : (
-        <ContentDisplay className="absolute" message="Direct Mode" />
+        <ContentDisplay className="absolute" message={t('Direct Mode')} />
       )}
     </SidePage>
-  );
+  )
 }

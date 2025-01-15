@@ -1,110 +1,104 @@
-import useSWR from "swr";
-import { ClashConfig, Profile } from "@/index";
-import * as tauri from "@/service/tauri";
-import { Clash, clash } from "../service/clash";
+import useSWR from 'swr'
+import { ClashConfig, Profile } from '@/index'
+import * as tauri from '@/service/tauri'
+import { clash } from '../service/clash'
 
 /**
  * useClash with swr.
  * Data from tauri backend.
  */
 export const useClash = () => {
-  const { deleteConnections, ...api } = clash();
+  const { deleteConnections, ...api } = clash()
 
-  const getClashInfo = useSWR("getClashInfo", tauri.getClashInfo);
+  const getClashInfo = useSWR('getClashInfo', tauri.getClashInfo)
+  const getConfigs = useSWR('getClashConfig', api.getConfigs)
 
-  const setClashInfo = async (payload: Partial<ClashConfig>) => {
+  const setConfigs = async (payload: Partial<ClashConfig>) => {
     try {
-      await tauri.patchClashInfo(payload);
+      await tauri.patchClashConfig(payload)
 
-      await getClashInfo.mutate();
+      await Promise.all([getClashInfo.mutate(), getConfigs.mutate()])
     } catch (e) {
-      console.error(e);
-    } finally {
-      return getClashInfo.data;
+      console.error(e)
     }
-  };
 
-  const getConfigs = useSWR("getClashConfig", api.getConfigs);
+    return getClashInfo.data
+  }
 
-  const setConfigs = async (payload: Partial<Clash.Config>) => {
-    try {
-      await api.setConfigs(payload);
+  const getVersion = useSWR('getClashVersion', api.getVersion)
 
-      await getConfigs.mutate();
-    } finally {
-      return getConfigs.data;
-    }
-  };
+  const getRules = useSWR('getClashRules', api.getRules)
 
-  const getVersion = useSWR("getClashVersion", api.getVersion);
+  const getRuntimeExists = useSWR('getRuntimeExists', tauri.getRuntimeExists)
 
-  const getRules = useSWR("getClashRules", api.getRules);
+  const getProfiles = useSWR('getProfiles', tauri.getProfiles)
 
-  const getRuntimeExists = useSWR("getRuntimeExists", tauri.getRuntimeExists);
+  const setProfiles = async (uid: string, profile: Partial<Profile.Item>) => {
+    await tauri.setProfiles({ uid, profile })
 
-  const getProfiles = useSWR("getProfiles", tauri.getProfiles);
+    await getProfiles.mutate()
 
-  const setProfiles = async (index: string, profile: Partial<Profile.Item>) => {
-    await tauri.setProfiles({ index, profile });
+    await getRuntimeLogs.mutate()
+  }
 
-    await getProfiles.mutate();
+  const setProfilesConfig = async (profiles: Partial<Profile.Config>) => {
+    await tauri.setProfilesConfig(profiles)
 
-    await getRuntimeLogs.mutate();
-  };
+    await getProfiles.mutate()
 
-  const setProfilesConfig = async (profiles: Profile.Config) => {
-    await tauri.setProfilesConfig(profiles);
-
-    await getProfiles.mutate();
-
-    await getRuntimeLogs.mutate();
-  };
+    await getRuntimeLogs.mutate()
+  }
 
   const createProfile = async (item: Partial<Profile.Item>, data?: string) => {
-    await tauri.createProfile(item, data);
+    await tauri.createProfile(item, data)
 
-    await getProfiles.mutate();
-  };
+    await getProfiles.mutate()
+  }
 
   const updateProfile = async (uid: string, option?: Profile.Option) => {
-    await tauri.updateProfile(uid, option);
+    await tauri.updateProfile(uid, option)
 
-    await getProfiles.mutate();
-  };
+    await getProfiles.mutate()
+  }
 
   const deleteProfile = async (uid: string) => {
-    await tauri.deleteProfile(uid);
+    await tauri.deleteProfile(uid)
 
-    await getProfiles.mutate();
-  };
+    await getProfiles.mutate()
+  }
 
   const getProfileFile = async (id?: string) => {
     if (id) {
-      const result = await tauri.readProfileFile(id);
+      const result = await tauri.readProfileFile(id)
 
       if (result) {
-        return result;
+        return result
       } else {
-        return "";
+        return ''
       }
     } else {
-      return "";
+      return ''
     }
-  };
+  }
 
   const importProfile = async (url: string, option?: Profile.Option) => {
-    await tauri.importProfile(url, option);
+    await tauri.importProfile(url, option)
 
-    await getProfiles.mutate();
-  };
+    await getProfiles.mutate()
+  }
 
-  const getRuntimeLogs = useSWR("getRuntimeLogs", tauri.getRuntimeLogs, {
+  const getRuntimeLogs = useSWR('getRuntimeLogs', tauri.getRuntimeLogs, {
     refreshInterval: 1000,
-  });
+  })
+
+  const reorderProfilesByList = async (list: string[]) => {
+    await tauri.reorderProfilesByList(list)
+
+    await getProfiles.mutate()
+  }
 
   return {
     getClashInfo,
-    setClashInfo,
     getConfigs,
     setConfigs,
     getVersion,
@@ -122,5 +116,6 @@ export const useClash = () => {
     getProfileFile,
     getRuntimeLogs,
     setProfileFile: tauri.saveProfileFile,
-  };
-};
+    reorderProfilesByList,
+  }
+}

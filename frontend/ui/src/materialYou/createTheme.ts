@@ -2,9 +2,9 @@ import {
   argbFromHex,
   hexFromArgb,
   themeFromSourceColor,
-} from "@material/material-color-utilities";
-import createPalette from "@mui/material/styles/createPalette";
-import extendTheme from "@mui/material/styles/experimental_extendTheme";
+} from '@material/material-color-utilities'
+import { createTheme } from '@mui/material/styles'
+import createPalette from '@mui/material/styles/createPalette'
 import {
   MuiButton,
   MuiButtonGroup,
@@ -18,27 +18,27 @@ import {
   MuiMenu,
   MuiPaper,
   MuiSwitch,
-} from "./themeComponents";
-import { MUI_BREAKPOINTS } from "./themeConsts.mjs";
+} from './themeComponents'
+import { MUI_BREAKPOINTS } from './themeConsts.mjs'
 
 interface ThemeSchema {
-  primary_color: string;
-  secondary_color: string;
-  primary_text: string;
-  secondary_text: string;
-  info_color: string;
-  error_color: string;
-  warning_color: string;
-  success_color: string;
-  font_family?: string;
+  primary_color: string
+  secondary_color: string
+  primary_text: string
+  secondary_text: string
+  info_color: string
+  error_color: string
+  warning_color: string
+  success_color: string
+  font_family?: string
 }
 
 export const createMDYTheme = (themeSchema: ThemeSchema) => {
   const materialColor = themeFromSourceColor(
     argbFromHex(themeSchema.primary_color),
-  );
+  )
 
-  const generatePalette = (mode: "light" | "dark") => {
+  const generatePalette = (mode: 'light' | 'dark') => {
     return createPalette({
       mode,
       primary: {
@@ -56,37 +56,49 @@ export const createMDYTheme = (themeSchema: ThemeSchema) => {
           materialColor.schemes[mode].onSecondaryContainer,
         ),
       },
-    });
-  };
-
-  const theme = extendTheme({
-    colorSchemes: {
-      light: {
-        palette: generatePalette("light"),
+    })
+  }
+  const colorSchemes = {
+    light: {
+      palette: generatePalette('light'),
+    },
+    dark: {
+      palette: generatePalette('dark'),
+    },
+  }
+  console.log(colorSchemes)
+  const theme = createTheme(
+    {
+      cssVariables: {
+        colorSchemeSelector: 'class',
       },
-      dark: {
-        palette: generatePalette("dark"),
+      colorSchemes: {
+        light: true,
+        dark: true,
       },
+      typography: {
+        fontFamily: themeSchema?.font_family,
+      },
+      components: {
+        MuiButton,
+        MuiButtonGroup,
+        MuiCard,
+        MuiCardContent,
+        MuiDialog,
+        MuiDialogActions,
+        MuiDialogContent,
+        MuiDialogTitle,
+        MuiLinearProgress,
+        MuiMenu,
+        MuiPaper,
+        MuiSwitch,
+      },
+      breakpoints: MUI_BREAKPOINTS,
     },
-    typography: {
-      fontFamily: themeSchema?.font_family,
+    {
+      colorSchemes,
     },
-    components: {
-      MuiButton,
-      MuiButtonGroup,
-      MuiCard,
-      MuiCardContent,
-      MuiDialog,
-      MuiDialogActions,
-      MuiDialogContent,
-      MuiDialogTitle,
-      MuiLinearProgress,
-      MuiMenu,
-      MuiPaper,
-      MuiSwitch,
-    },
-    breakpoints: MUI_BREAKPOINTS,
-  });
+  )
 
-  return theme;
-};
+  return theme
+}

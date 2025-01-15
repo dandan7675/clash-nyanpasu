@@ -224,8 +224,8 @@ mod platform_impl {
     use std::sync::atomic::AtomicBool;
     use tauri::{
         menu::{
-            CheckMenuItemBuilder, IsMenuItem, Menu, MenuBuilder, MenuItemBuilder, MenuItemKind,
-            Submenu, SubmenuBuilder,
+            CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, MenuItemKind, Submenu,
+            SubmenuBuilder,
         },
         AppHandle, Manager, Runtime,
     };
@@ -352,7 +352,9 @@ mod platform_impl {
             .state::<crate::core::tray::TrayState<tauri::Wry>>();
         TRAY_ITEM_UPDATE_BARRIER.store(true, std::sync::atomic::Ordering::Release);
         let menu = tray_state.menu.lock();
-        let item_ids = ITEM_IDS.lock();
+        // comment it just because we could not get the access to the menu item via the id
+        // If the tauri team fixes this issue, we could use the following code to update the tray item
+        // let item_ids = ITEM_IDS.lock();
         for action in actions {
             //     #[cfg(not(target_os = "linux"))]
             //     {
@@ -444,7 +446,7 @@ mod platform_impl {
                     }).map(|item| item.as_check_menuitem_unchecked().clone())
             }
 
-            let from_item = find_check_item(&menu, actions[0].0.clone(), actions[0].1.clone());
+            let from_item = find_check_item(&menu, action.0.clone(), action.1.clone());
             match from_item {
                 Some(item) => {
                     let _ = item.set_checked(false);
@@ -452,12 +454,12 @@ mod platform_impl {
                 None => {
                     warn!(
                         "failed to deselect, item not found: {} {}",
-                        actions[0].0, actions[0].1
+                        action.0, action.1
                     );
                 }
             }
 
-            let to_item = find_check_item(&menu, actions[0].0.clone(), actions[0].2.clone());
+            let to_item = find_check_item(&menu, action.0.clone(), action.2.clone());
             match to_item {
                 Some(item) => {
                     let _ = item.set_checked(true);
@@ -465,13 +467,12 @@ mod platform_impl {
                 None => {
                     warn!(
                         "failed to select, item not found: {} {}",
-                        actions[0].0, actions[0].2
+                        action.0, action.2
                     );
                 }
             }
-
-            TRAY_ITEM_UPDATE_BARRIER.store(false, std::sync::atomic::Ordering::Release);
         }
+        TRAY_ITEM_UPDATE_BARRIER.store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -481,7 +482,7 @@ pub trait SystemTrayMenuProxiesExt<R: Runtime> {
         Self: Sized;
 }
 
-impl<'m, R: Runtime, M: Manager<R>> SystemTrayMenuProxiesExt<R> for MenuBuilder<'m, R, M> {
+impl<R: Runtime, M: Manager<R>> SystemTrayMenuProxiesExt<R> for MenuBuilder<'_, R, M> {
     fn setup_proxies(self, app_handle: &AppHandle<R>) -> anyhow::Result<Self> {
         platform_impl::setup_tray(app_handle, self)
     }
