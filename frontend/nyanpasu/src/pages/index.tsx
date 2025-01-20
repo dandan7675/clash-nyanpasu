@@ -1,17 +1,22 @@
-import { useAtomValue } from "jotai";
-import { useEffect } from "react";
-import { useNavigate } from "@/router";
-import { memorizedRoutePathAtom } from "@/store";
+import { useAtomValue } from 'jotai'
+import { useEffect } from 'react'
+import { memorizedRoutePathAtom } from '@/store'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 
-export default function IndexPage() {
-  const navigate = useNavigate();
-  const memorizedNavigate = useAtomValue(memorizedRoutePathAtom);
+export const Route = createFileRoute('/')({
+  component: IndexPage,
+})
+
+function IndexPage() {
+  const navigate = useNavigate()
+  const memorizedNavigate = useAtomValue(memorizedRoutePathAtom)
   useEffect(() => {
-    navigate(
-      memorizedNavigate && memorizedNavigate !== "/"
-        ? memorizedNavigate
-        : "/dashboard",
-    );
-  }, [memorizedNavigate, navigate]);
-  return null;
+    navigate({
+      to:
+        memorizedNavigate && memorizedNavigate !== '/'
+          ? memorizedNavigate
+          : '/dashboard',
+    })
+  }, [memorizedNavigate, navigate])
+  return null
 }

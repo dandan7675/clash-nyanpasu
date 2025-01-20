@@ -1,24 +1,24 @@
-name: "[Single] Build Linux"
+name: '[Single] Build Linux'
 
 on:
   workflow_dispatch:
     inputs:
       nightly:
-        description: "Nightly prepare"
+        description: 'Nightly prepare'
         required: true
         type: boolean
         default: false
 
       tag:
-        description: "Release Tag"
+        description: 'Release Tag'
         required: true
         type: string
 
       arch:
         type: choice
-        description: "build arch target"
+        description: 'build arch target'
         required: true
-        default: "x86_64"
+        default: 'x86_64'
         options:
           - x86_64
           - i686
@@ -29,25 +29,25 @@ on:
   workflow_call:
     inputs:
       nightly:
-        description: "Nightly prepare"
+        description: 'Nightly prepare'
         required: true
         type: boolean
         default: false
 
       tag:
-        description: "Release Tag"
+        description: 'Release Tag'
         required: true
         type: string
 
       arch:
         type: string
-        description: "build arch target"
+        description: 'build arch target'
         required: true
-        default: "x86_64"
+        default: 'x86_64'
 
 jobs:
   build:
-    runs-on: ubuntu-22.04 # 需要手动升级到 24.04
+    runs-on: ubuntu-24.04 # 需要手动升级到 24.04
 
     steps:
       - name: Checkout repository
@@ -86,10 +86,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libappindicator3-dev librsvg2-dev patchelf openssl
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "./backend/"
-          prefix-key: "rust-stable"
+          workspaces: './backend/'
+          prefix-key: 'rust-stable'
           key: ubuntu-latest
-          shared-key: "release"
+          shared-key: 'release'
 
       - name: Install Node latest
         uses: actions/setup-node@v4
@@ -128,7 +128,7 @@ jobs:
       - name: Nightly Prepare
         if: ${{ inputs.nightly == true }}
         run: |
-          pnpm prepare:nightly
+          pnpm prepare:nightly ${{ inputs.arch != 'x86_64' && '--disable-updater'}}
       - name: Build UI
         run: |
           pnpm -F ui build
@@ -142,8 +142,8 @@ jobs:
           NIGHTLY: ${{ inputs.nightly == true  && 'true' || 'false' }}
         with:
           tagName: ${{ inputs.tag }}
-          releaseName: "Clash Nyanpasu Dev"
-          releaseBody: "More new features are now supported."
+          releaseName: 'Clash Nyanpasu Dev'
+          releaseBody: 'More new features are now supported.'
           releaseDraft: false
           prerelease: true
           tauriScript: pnpm tauri
@@ -159,16 +159,16 @@ jobs:
         run: |
           case "${{ inputs.arch }}" in
             "i686")
-              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target i686-unknown-linux-gnu -b "rpm,deb,updater"' || 'pnpm build -r cross --target i686-unknown-linux-gnu -b "rpm,deb,updater"' }}
+              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target i686-unknown-linux-gnu -b "rpm,deb"' || 'pnpm build -r cross --target i686-unknown-linux-gnu -b "rpm,deb" -c "{ "bundle": { "createUpdaterArtifacts": false } }"' }}
               ;;
             "aarch64")
-              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target aarch64-unknown-linux-gnu -b "rpm,deb,updater"' || 'pnpm build -r cross --target aarch64-unknown-linux-gnu -b "rpm,deb,updater"' }}
+              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target aarch64-unknown-linux-gnu -b "rpm,deb"' || 'pnpm build -r cross --target aarch64-unknown-linux-gnu -b "rpm,deb" -c "{ "bundle": { "createUpdaterArtifacts": false } }"' }}
               ;;
             "armel")
-              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target armv7-unknown-linux-gnueabi -b "rpm,deb,updater"' || 'pnpm build -r cross --target armv7-unknown-linux-gnueabi -b "rpm,deb,updater"' }}
+              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target armv7-unknown-linux-gnueabi -b "rpm,deb"' || 'pnpm build -r cross --target armv7-unknown-linux-gnueabi -b "rpm,deb" -c "{ "bundle": { "createUpdaterArtifacts": false } }"' }}
               ;;
             "armhf")
-              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target armv7-unknown-linux-gnueabihf -b "rpm,deb,updater"' || 'pnpm build -r cross --target armv7-unknown-linux-gnueabihf -b "rpm,deb,updater"' }}
+              ${{ inputs.nightly == true && 'pnpm build:nightly -r cross --target armv7-unknown-linux-gnueabihf -b "rpm,deb"' || 'pnpm build -r cross --target armv7-unknown-linux-gnueabihf -b "rpm,deb" -c "{ "bundle": { "createUpdaterArtifacts": false } }"' }}
               ;;
           esac
 
@@ -192,3 +192,23 @@ jobs:
             gh release upload $TAG_NAME "$sha_file" --clobber
             echo "Uploaded $sha_file to release $TAG_NAME"
           done
+      - name: Upload AppImage to Github Artifact
+        if: ${{ inputs.arch == 'x86_64' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clash.Nyanpasu-linux-${{ inputs.arch }}-appimage
+          path: ./backend/target/**/*.AppImage
+      - name: Upload deb to Github Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clash.Nyanpasu-linux-${{ inputs.arch }}-deb
+          path: |
+            ./backend/target/**/*.deb
+            ./backend/target/**/*.deb.sha256
+      - name: Upload rpm to Github Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clash.Nyanpasu-linux-${{ inputs.arch }}-rpm
+          path: |
+            ./backend/target/**/*.rpm
+            ./backend/target/**/*.rpm.sha256

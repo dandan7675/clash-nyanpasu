@@ -1,139 +1,139 @@
-import { useMemoizedFn } from "ahooks";
-import { ChangeEvent, useTransition } from "react";
-import { useTranslation } from "react-i18next";
-import { formatError } from "@/utils";
-import { message } from "@/utils/notification";
-import { LoadingButton } from "@mui/lab";
-import { List, ListItem, ListItemText, Typography } from "@mui/material";
-import { restartSidecar, useNyanpasu } from "@nyanpasu/interface";
-import { BaseCard, SwitchItem } from "@nyanpasu/ui";
-import { nyanpasu } from "./modules/create-props";
+import { useMemoizedFn } from 'ahooks'
+import { ChangeEvent, useTransition } from 'react'
+import { useTranslation } from 'react-i18next'
+import { formatError } from '@/utils'
+import { message } from '@/utils/notification'
+import { LoadingButton } from '@mui/lab'
+import { Button, List, ListItem, ListItemText, Typography } from '@mui/material'
+import { restartSidecar, useNyanpasu } from '@nyanpasu/interface'
+import { BaseCard, SwitchItem } from '@nyanpasu/ui'
+import { nyanpasu } from './modules/create-props'
 import {
   ServerManualPromptDialogWrapper,
   useServerManualPromptDialog,
-} from "./modules/service-manual-prompt-dialog";
+} from './modules/service-manual-prompt-dialog'
 
-const { useBooleanProps: createBooleanProps } = nyanpasu;
+const { useBooleanProps: createBooleanProps } = nyanpasu
 
 export const SettingSystemService = () => {
-  const { t } = useTranslation();
+  const { t } = useTranslation()
 
-  const { getServiceStatus, setServiceStatus } = useNyanpasu();
+  const { getServiceStatus, setServiceStatus } = useNyanpasu()
 
   const getInstallButtonString = () => {
     switch (getServiceStatus.data) {
-      case "running":
-      case "stopped": {
-        return "Uninstall";
+      case 'running':
+      case 'stopped': {
+        return t('uninstall')
       }
 
-      case "not_installed": {
-        return "Install";
+      case 'not_installed': {
+        return t('install')
       }
     }
-  };
+  }
   const getControlButtonString = () => {
     switch (getServiceStatus.data) {
-      case "running": {
-        return "Stop";
+      case 'running': {
+        return t('stop')
       }
 
-      case "stopped": {
-        return "Start";
+      case 'stopped': {
+        return t('start')
       }
     }
-  };
+  }
 
-  const isDisabled = getServiceStatus.data === "not_installed";
+  const isDisabled = getServiceStatus.data === 'not_installed'
 
-  const promptDialog = useServerManualPromptDialog();
+  const promptDialog = useServerManualPromptDialog()
 
-  const [installOrUninstallPending, startInstallOrUninstall] = useTransition();
+  const [installOrUninstallPending, startInstallOrUninstall] = useTransition()
   const handleInstallClick = useMemoizedFn(() => {
     startInstallOrUninstall(async () => {
       try {
         switch (getServiceStatus.data) {
-          case "running":
-          case "stopped":
-            await setServiceStatus("uninstall");
-            break;
+          case 'running':
+          case 'stopped':
+            await setServiceStatus('uninstall')
+            break
 
-          case "not_installed":
-            await setServiceStatus("install");
-            break;
+          case 'not_installed':
+            await setServiceStatus('install')
+            break
 
           default:
-            break;
+            break
         }
-        await restartSidecar();
+        await restartSidecar()
       } catch (e) {
         const errorMessage = `${
-          getServiceStatus.data === "not_installed"
-            ? "Install failed"
-            : "Uninstall failed"
-        }: ${formatError(e)}`;
+          getServiceStatus.data === 'not_installed'
+            ? t('Failed to install')
+            : t('Failed to uninstall')
+        }: ${formatError(e)}`
 
         message(errorMessage, {
-          kind: "error",
-          title: t("Error"),
-        });
-        // If install failed show a prompt to user to install the service manually
+          kind: 'error',
+          title: t('Error'),
+        })
+        // If the installation fails, prompt the user to manually install the service
         promptDialog.show(
-          getServiceStatus.data === "not_installed" ? "install" : "uninstall",
-        );
+          getServiceStatus.data === 'not_installed' ? 'install' : 'uninstall',
+        )
       }
-    });
-  });
+    })
+  })
 
-  const [serviceControlPending, startServiceControl] = useTransition();
+  const [serviceControlPending, startServiceControl] = useTransition()
   const handleControlClick = useMemoizedFn(() => {
     startServiceControl(async () => {
       try {
         switch (getServiceStatus.data) {
-          case "running":
-            await setServiceStatus("stop");
-            break;
+          case 'running':
+            await setServiceStatus('stop')
+            break
 
-          case "stopped":
-            await setServiceStatus("start");
-            break;
+          case 'stopped':
+            await setServiceStatus('start')
+            break
 
           default:
-            break;
+            break
         }
-        await restartSidecar();
+        await restartSidecar()
       } catch (e) {
         const errorMessage =
-          getServiceStatus.data === "running"
+          getServiceStatus.data === 'running'
             ? `Stop failed: ${formatError(e)}`
-            : `Start failed: ${formatError(e)}`;
+            : `Start failed: ${formatError(e)}`
 
         message(errorMessage, {
-          kind: "error",
-          title: t("Error"),
-        });
+          kind: 'error',
+          title: t('Error'),
+        })
         // If start failed show a prompt to user to start the service manually
         promptDialog.show(
-          getServiceStatus.data === "running" ? "stop" : "start",
-        );
+          getServiceStatus.data === 'running' ? 'stop' : 'start',
+        )
       }
-    });
-  });
-  const serviceToggleProps = createBooleanProps("enable_service_mode");
+    })
+  })
+  const serviceToggleProps = createBooleanProps('enable_service_mode')
   const onChange = async (
     event: ChangeEvent<HTMLInputElement>,
     checked: boolean,
   ) => {
-    await serviceToggleProps.onChange?.(event, checked);
-    await restartSidecar();
-  };
+    await serviceToggleProps.onChange?.(event, checked)
+    await restartSidecar()
+  }
 
   return (
-    <BaseCard label="System Service">
+    <BaseCard label={t('System Service')}>
       <ServerManualPromptDialogWrapper />
       <List disablePadding>
         <SwitchItem
-          label={t("Service Mode")}
+          label={t('Service Mode')}
           disabled={isDisabled}
           {...serviceToggleProps}
           onChange={onChange}
@@ -142,14 +142,19 @@ export const SettingSystemService = () => {
         {isDisabled && (
           <ListItem sx={{ pl: 0, pr: 0 }}>
             <Typography>
-              Information: Please make sure that the Clash Nyanpasu Service is
-              installed and enabled
+              {t(
+                'Information: To enable service mode, make sure the Clash Nyanpasu service is installed and started',
+              )}
             </Typography>
           </ListItem>
         )}
 
         <ListItem sx={{ pl: 0, pr: 0 }}>
-          <ListItemText primary={`Current State: ${getServiceStatus.data}`} />
+          <ListItemText
+            primary={t('Current Status', {
+              status: t(`${getServiceStatus.data}`),
+            })}
+          />
           <div className="flex gap-2">
             {!isDisabled && (
               <LoadingButton
@@ -170,11 +175,20 @@ export const SettingSystemService = () => {
             >
               {getInstallButtonString()}
             </LoadingButton>
+
+            {import.meta.env.DEV && (
+              <Button
+                variant="contained"
+                onClick={() => promptDialog.show('install')}
+              >
+                {t('Prompt')}
+              </Button>
+            )}
           </div>
         </ListItem>
       </List>
     </BaseCard>
-  );
-};
+  )
+}
 
-export default SettingSystemService;
+export default SettingSystemService

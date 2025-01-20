@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { ReactNode } from "react";
+import { motion } from 'framer-motion'
+import { ReactNode } from 'react'
 import {
   alpha,
   Box,
@@ -7,9 +7,8 @@ import {
   CardContent,
   CircularProgress,
   Typography,
-  useTheme,
-} from "@mui/material";
-import style from "./style.module.scss";
+} from '@mui/material'
+import style from './style.module.scss'
 
 export const BaseCard = ({
   label,
@@ -17,15 +16,13 @@ export const BaseCard = ({
   loading,
   children,
 }: {
-  label?: string;
-  labelChildren?: ReactNode;
-  loading?: boolean;
-  children?: ReactNode;
+  label?: string
+  labelChildren?: ReactNode
+  loading?: boolean
+  children?: ReactNode
 }) => {
-  const { palette } = useTheme();
-
   return (
-    <Card style={{ position: "relative" }}>
+    <Card style={{ position: 'relative' }}>
       <CardContent>
         {label && (
           <Box
@@ -47,26 +44,28 @@ export const BaseCard = ({
 
       <motion.div
         initial={false}
-        animate={loading ? "loading" : "none"}
+        animate={loading ? 'loading' : 'none'}
         variants={{
-          loading: { opacity: 1, visibility: "visible" },
+          loading: { opacity: 1, visibility: 'visible' },
           none: {
             opacity: 0,
             transitionEnd: {
-              visibility: "hidden",
+              visibility: 'hidden',
             },
           },
         }}
       >
-        <div
+        <Box
           className={style.LoadingMask}
-          style={{
-            backgroundColor: alpha(palette.grey[100], 0.1),
-          }}
+          sx={[
+            (theme) => ({
+              backgroundColor: alpha(theme.palette.grey[100], 0.1),
+            }),
+          ]}
         >
           <CircularProgress />
-        </div>
+        </Box>
       </motion.div>
     </Card>
-  );
-};
+  )
+}

@@ -1,26 +1,27 @@
 {
   "name": "@nyanpasu/scripts",
   "type": "module",
-  "version": "1.6.1",
+  "version": "2.0.0",
   "dependencies": {
     "@actions/github": "6.0.0",
-    "@types/figlet": "1.5.8",
-    "figlet": "1.7.0",
-    "p-retry": "6.2.0"
+    "@types/figlet": "1.7.0",
+    "figlet": "1.8.0",
+    "filesize": "10.1.6",
+    "p-retry": "6.2.1"
   },
   "devDependencies": {
-    "@octokit/types": "13.5.0",
-    "@types/adm-zip": "0.5.5",
+    "@octokit/types": "13.7.0",
+    "@types/adm-zip": "0.5.7",
     "adm-zip": "0.5.16",
     "colorize-template": "1.0.0",
-    "consola": "3.2.3",
-    "fs-extra": "11.2.0",
-    "https-proxy-agent": "7.0.5",
+    "consola": "3.4.0",
+    "fs-extra": "11.3.0",
+    "https-proxy-agent": "7.0.6",
     "node-fetch": "3.3.2",
-    "octokit": "4.0.2",
-    "picocolors": "1.1.0",
+    "octokit": "4.1.0",
+    "picocolors": "1.1.1",
     "tar": "7.4.3",
-    "telegram": "2.24.11",
-    "undici": "6.19.8"
+    "telegram": "2.26.16",
+    "undici": "7.2.3"
   }
 }

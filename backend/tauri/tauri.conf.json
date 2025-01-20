@@ -1,5 +1,6 @@
 {
   "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
+  "mainBinaryName": "Clash Nyanpasu",
   "bundle": {
     "active": true,
     "targets": "all",
@@ -8,7 +9,6 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "",
       "webviewInstallMode": {
-        "silent": true,
         "type": "embedBootstrapper"
       },
       "wix": {
@@ -37,6 +37,7 @@
       "sidecar/mihomo",
       "sidecar/mihomo-alpha",
       "sidecar/clash-rs",
+      "sidecar/clash-rs-alpha",
       "sidecar/nyanpasu-service"
     ],
     "copyright": "© 2024 Clash Nyanpasu All Rights Reserved",
@@ -45,7 +46,7 @@
     "longDescription": "Clash Nyanpasu! (∠・ω< )⌒☆",
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "12.6",
       "exceptionDomain": "",
       "signingIdentity": null,
       "entitlements": null
@@ -71,9 +72,9 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBMUM0NjMxREZCNDRGMjYKUldRbVQ3VGZNVVljbW43N0FlWjA4UkNrbTgxSWxSSXJQcExXNkZjUTlTQkIyYkJzL0tsSWF2d0cK",
       "endpoints": [
-        "https://mirror.ghproxy.com/https://github.com/LibNyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
-        "https://gh-proxy.com/https://github.com/LibNyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
-        "https://github.com/LibNyanpasu/clash-nyanpasu/releases/download/updater/update.json"
+        "https://mirror.ghproxy.com/https://github.com/libnyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
+        "https://gh-proxy.com/https://github.com/libnyanpasu/clash-nyanpasu/releases/download/updater/update-proxy.json",
+        "https://github.com/libnyanpasu/clash-nyanpasu/releases/download/updater/update.json"
       ]
     }
   },

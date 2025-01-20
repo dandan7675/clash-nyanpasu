@@ -6,6 +6,7 @@ use std::{borrow::Cow, fs, path::PathBuf};
 use tauri::{utils::platform::resource_dir, Env};
 
 #[cfg(not(feature = "verge-dev"))]
+#[allow(unused)]
 const PREVIOUS_APP_NAME: &str = "clash-verge";
 #[cfg(feature = "verge-dev")]
 const PREVIOUS_APP_NAME: &str = "clash-verge-dev";
@@ -50,7 +51,7 @@ pub fn app_config_dir() -> Result<PathBuf> {
         {
             if get_portable_flag() {
                 let app_dir = app_install_dir()?;
-                Some(app_dir.join(".config").join(PREVIOUS_APP_NAME))
+                Some(app_dir.join(".config").join(APP_NAME))
             } else if let Ok(Some(path)) = super::winreg::get_app_dir() {
                 Some(path)
             } else {
@@ -80,7 +81,7 @@ pub fn app_data_dir() -> Result<PathBuf> {
         {
             if get_portable_flag() {
                 let app_dir = app_install_dir()?;
-                Some(app_dir.join(".data").join(PREVIOUS_APP_NAME))
+                Some(app_dir.join(".data").join(APP_NAME))
             } else {
                 None
             }
@@ -100,27 +101,6 @@ pub fn app_data_dir() -> Result<PathBuf> {
         create_dir_all(&dir)?;
         Ok(dir)
     })
-}
-
-pub fn old_app_home_dir() -> Result<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        if !get_portable_flag() {
-            Ok(dirs::home_dir()
-                .ok_or(anyhow::anyhow!("failed to check old app home dir"))?
-                .join(".config")
-                .join(PREVIOUS_APP_NAME))
-        } else {
-            let app_dir = app_install_dir()?;
-            Ok(app_dir.join(".config").join(PREVIOUS_APP_NAME))
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    Ok(dirs::home_dir()
-        .ok_or(anyhow::anyhow!("failed to get the app home dir"))?
-        .join(".config")
-        .join(PREVIOUS_APP_NAME))
 }
 
 /// get the verge app home dir
@@ -172,7 +152,7 @@ pub fn app_resources_dir() -> Result<PathBuf> {
     Err(anyhow::anyhow!("failed to get the resource dir"))
 }
 
-/// Cache dir, it safe to clean up
+// /// Cache dir, it safe to clean up
 // pub fn cache_dir() -> Result<PathBuf> {
 //     let mut dir = dirs::cache_dir()
 //         .ok_or(anyhow::anyhow!("failed to get the cache dir"))?
@@ -236,24 +216,6 @@ pub fn tray_icons_path(mode: &str) -> Result<PathBuf> {
         fs::create_dir_all(&icons_dir)?;
     }
     Ok(icons_dir.join(format!("{mode}.png")))
-}
-
-#[cfg(windows)]
-#[deprecated(
-    since = "1.6.0",
-    note = "should use nyanpasu_utils::dirs::suggest_service_{config|data}_dir instead"
-)]
-pub fn service_dir() -> Result<PathBuf> {
-    Ok(app_home_dir()?.join("service"))
-}
-
-#[cfg(windows)]
-#[deprecated(
-    since = "1.6.0",
-    note = "should use nyanpasu_utils::dirs::suggest_service_data_dir instead"
-)]
-pub fn service_path() -> Result<PathBuf> {
-    Ok(service_dir()?.join("clash-verge-service.exe"))
 }
 
 #[cfg(windows)]
@@ -332,6 +294,32 @@ pub fn get_data_or_sidecar_path(binary_name: impl AsRef<str>) -> Result<PathBuf>
     });
 
     Ok(path)
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn check_core_permission(core: &nyanpasu_utils::core::CoreType) -> anyhow::Result<bool> {
+    #[cfg(target_os = "macos")]
+    const ROOT_GROUP: &str = "admin";
+    #[cfg(target_os = "linux")]
+    const ROOT_GROUP: &str = "root";
+
+    use anyhow::Context;
+    use nix::unistd::{Gid, Group as NixGroup, Uid, User};
+    use std::os::unix::fs::MetadataExt;
+
+    let core_path =
+        crate::core::clash::core::find_binary_path(core).context("clash core not found")?;
+    let metadata = std::fs::metadata(&core_path).context("failed to get core metadata")?;
+    let uid = metadata.uid();
+    let gid = metadata.gid();
+    let user = User::from_uid(Uid::from_raw(uid)).ok().flatten();
+    let group = NixGroup::from_gid(Gid::from_raw(gid)).ok().flatten();
+    if let (Some(user), Some(group)) = (user, group) {
+        if user.name == "root" && group.name == ROOT_GROUP {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 mod test {

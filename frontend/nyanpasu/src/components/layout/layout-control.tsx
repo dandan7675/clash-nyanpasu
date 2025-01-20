@@ -1,7 +1,5 @@
-import { useMemoizedFn } from "ahooks";
-import { debounce } from "lodash-es";
-import { useEffect, useRef, useState } from "react";
-import { notification, NotificationType } from "@/utils/notification";
+import { useMemoizedFn } from 'ahooks'
+import { useEffect, useRef } from 'react'
 import {
   CloseRounded,
   CropSquareRounded,
@@ -9,78 +7,69 @@ import {
   HorizontalRuleRounded,
   PushPin,
   PushPinOutlined,
-} from "@mui/icons-material";
-import { alpha, Button, ButtonProps, useTheme } from "@mui/material";
-import { save_window_size_state, useNyanpasu } from "@nyanpasu/interface";
-import { cn } from "@nyanpasu/ui";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { platform as getPlatform } from "@tauri-apps/plugin-os";
+} from '@mui/icons-material'
+import { alpha, Button, ButtonProps, useTheme } from '@mui/material'
+import { saveWindowSizeState, useNyanpasu } from '@nyanpasu/interface'
+import { cn } from '@nyanpasu/ui'
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { listen, TauriEvent, UnlistenFn } from '@tauri-apps/api/event'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { platform as getPlatform } from '@tauri-apps/plugin-os'
 
-const appWindow = getCurrentWebviewWindow();
+const appWindow = getCurrentWebviewWindow()
 
 const CtrlButton = (props: ButtonProps) => {
-  const { palette } = useTheme();
+  const { palette } = useTheme()
 
   return (
     <Button
       className="!size-8 !min-w-0"
       sx={{
         backgroundColor: alpha(palette.primary.main, 0.1),
-        svg: { transform: "scale(0.9)" },
+        svg: { transform: 'scale(0.9)' },
       }}
       {...props}
     />
-  );
-};
+  )
+}
 
 export const LayoutControl = ({ className }: { className?: string }) => {
-  const { nyanpasuConfig, setNyanpasuConfig } = useNyanpasu();
-  const [isMaximized, setIsMaximized] = useState(false);
-
-  const platform = useRef(getPlatform());
-
-  const updateMaximized = async () => {
-    try {
-      const isMaximized = await appWindow.isMaximized();
-      setIsMaximized(() => isMaximized);
-    } catch (error) {
-      notification({
-        type: NotificationType.Error,
-        title: "Error",
-        body: typeof error === "string" ? error : (error as Error).message,
-      });
-    }
-  };
-
-  const toggleAlwaysOnTop = useMemoizedFn(async () => {
-    const isAlwaysOnTop = !!nyanpasuConfig?.always_on_top;
-    await setNyanpasuConfig({ always_on_top: !isAlwaysOnTop });
-    await appWindow.setAlwaysOnTop(!isAlwaysOnTop);
-  });
+  const { nyanpasuConfig, setNyanpasuConfig } = useNyanpasu()
+  const { data: isMaximized } = useSuspenseQuery({
+    queryKey: ['isMaximized'],
+    queryFn: () => appWindow.isMaximized(),
+  })
+  const queryClient = useQueryClient()
+  const unlistenRef = useRef<UnlistenFn | null>(null)
+  const platform = useRef(getPlatform())
 
   useEffect(() => {
-    // Update the maximized state
-    updateMaximized();
+    listen(TauriEvent.WINDOW_RESIZED, () => {
+      queryClient.invalidateQueries({ queryKey: ['isMaximized'] })
+    })
+      .then((unlisten) => {
+        unlistenRef.current = unlisten
+      })
+      .catch((error) => {
+        console.error(error)
+      })
+  }, [queryClient])
 
-    // Add a resize handler to update the maximized state
-    const resizeHandler = debounce(updateMaximized, 1000);
-
-    window.addEventListener("resize", resizeHandler);
-
-    return () => {
-      window.removeEventListener("resize", resizeHandler);
-    };
-  }, []);
+  const toggleAlwaysOnTop = useMemoizedFn(async () => {
+    const isAlwaysOnTop = !!nyanpasuConfig?.always_on_top
+    await setNyanpasuConfig({ always_on_top: !isAlwaysOnTop })
+    await appWindow.setAlwaysOnTop(!isAlwaysOnTop)
+  })
 
   return (
-    <div className={cn("flex gap-1", className)} data-tauri-drag-region>
+    <div className={cn('flex gap-1', className)} data-tauri-drag-region>
       <CtrlButton onClick={toggleAlwaysOnTop}>
         {nyanpasuConfig?.always_on_top ? (
-          <PushPin fontSize="small" style={{ transform: "rotate(15deg)" }} />
+          <PushPin fontSize="small" style={{ transform: 'rotate(15deg)' }} />
         ) : (
           <PushPinOutlined
             fontSize="small"
-            style={{ transform: "rotate(15deg)" }}
+            style={{ transform: 'rotate(15deg)' }}
           />
         )}
       </CtrlButton>
@@ -91,15 +80,16 @@ export const LayoutControl = ({ className }: { className?: string }) => {
 
       <CtrlButton
         onClick={() => {
-          setIsMaximized((isMaximized) => !isMaximized);
-          appWindow.toggleMaximize();
+          appWindow.toggleMaximize().then((isMaximized) => {
+            queryClient.invalidateQueries({ queryKey: ['isMaximized'] })
+          })
         }}
       >
         {isMaximized ? (
           <FilterNoneRounded
             fontSize="small"
             style={{
-              transform: "rotate(180deg) scale(0.8)",
+              transform: 'rotate(180deg) scale(0.8)',
             }}
           />
         ) : (
@@ -109,17 +99,17 @@ export const LayoutControl = ({ className }: { className?: string }) => {
 
       <CtrlButton
         onClick={() => {
-          if (platform.current === "windows") {
-            save_window_size_state().finally(() => {
-              appWindow.close();
-            });
+          if (platform.current === 'windows') {
+            saveWindowSizeState().finally(() => {
+              appWindow.close()
+            })
           } else {
-            appWindow.close();
+            appWindow.close()
           }
         }}
       >
         <CloseRounded fontSize="small" />
       </CtrlButton>
     </div>
-  );
-};
+  )
+}

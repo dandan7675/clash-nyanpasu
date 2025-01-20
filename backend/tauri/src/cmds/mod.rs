@@ -36,6 +36,8 @@ enum Commands {
         #[arg(raw = true)]
         args: Vec<String>,
     },
+    /// Show a panic dialog while the application is enter panic handler.
+    PanicDialog { message: String },
 }
 
 struct DelayedExitGuard;
@@ -80,11 +82,15 @@ pub fn parse() -> anyhow::Result<()> {
                 };
                 // let args = args.clone();
                 // args.extend(vec!["--".to_string()]);
+                #[allow(clippy::zombie_processes)]
                 std::process::Command::new(path).args(args).spawn().unwrap();
             }
             Commands::Collect => {
                 let envs = crate::utils::collect::collect_envs().unwrap();
                 println!("{:#?}", envs);
+            }
+            Commands::PanicDialog { message } => {
+                crate::utils::dialog::panic_dialog(message);
             }
         }
         drop(guard);

@@ -99,16 +99,34 @@ pub fn parse_str<T: FromStr>(target: &str, key: &str) -> Option<T> {
 pub fn open_file(app: tauri::AppHandle, path: PathBuf) -> Result<()> {
     #[cfg(target_os = "macos")]
     let code = "Visual Studio Code";
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    let code = "code.cmd";
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     let code = "code";
 
     let shell = app.shell();
 
     trace_err!(
         match which::which(code) {
-            Ok(_) => crate::utils::open::with(path, code),
+            Ok(code_path) => {
+                log::debug!(target: "app", "find VScode `{}`", code_path.display());
+                #[cfg(not(windows))]
+                {
+                    crate::utils::open::with(path, code)
+                }
+                #[cfg(windows)]
+                {
+                    use std::ffi::OsString;
+                    let mut buf = OsString::with_capacity(path.as_os_str().len() + 2);
+                    buf.push("\"");
+                    buf.push(path.as_os_str());
+                    buf.push("\"");
+
+                    open::with_detached(buf, code)
+                }
+            }
             Err(err) => {
-                log::error!(target: "app", "Can't find VScode `{err}`");
+                log::error!(target: "app", "Can't find VScode `{err:?}`");
                 // default open
                 shell
                     .open(path.to_string_lossy().to_string(), None)
@@ -229,9 +247,7 @@ pub fn cleanup_processes(app_handle: &AppHandle) {
 
 #[instrument(skip(app_handle))]
 pub fn quit_application(app_handle: &AppHandle) {
-    cleanup_processes(app_handle);
     app_handle.exit(0);
-    std::process::exit(0);
 }
 
 #[instrument(skip(app_handle))]
@@ -257,7 +273,7 @@ pub fn restart_application(app_handle: &AppHandle) {
 #[macro_export]
 macro_rules! error {
     ($result: expr) => {
-        log::error!(target: "app", "{}", $result);
+        log::error!(target: "app", "{:?}", $result);
     };
 }
 
@@ -265,7 +281,7 @@ macro_rules! error {
 macro_rules! log_err {
     ($result: expr) => {
         if let Err(err) = $result {
-            log::error!(target: "app", "{err}");
+            log::error!(target: "app", "{:#?}", err);
         }
     };
 
@@ -295,32 +311,9 @@ macro_rules! dialog_err {
 macro_rules! trace_err {
     ($result: expr, $err_str: expr) => {
         if let Err(err) = $result {
-            log::trace!(target: "app", "{}, err {}", $err_str, err);
+            log::trace!(target: "app", "{}, err {:?}", $err_str, err);
         }
     }
-}
-
-/// wrap the anyhow error
-/// transform the error to String
-#[macro_export]
-macro_rules! wrap_err {
-    ($stat: expr) => {
-        match $stat {
-            Ok(a) => Ok(a),
-            Err(err) => {
-                log::error!(target: "app", "{}", err.to_string());
-                Err(format!("{}", err.to_string()))
-            }
-        }
-    };
-}
-
-/// return the string literal error
-#[macro_export]
-macro_rules! ret_err {
-    ($str: expr) => {
-        return Err($str.into())
-    };
 }
 
 #[test]

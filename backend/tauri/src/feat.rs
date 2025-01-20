@@ -4,6 +4,8 @@
 //! - timer 定时器
 //! - cmds 页面调用
 //!
+use std::borrow::Borrow;
+
 use crate::{
     config::*,
     core::{service::ipc::get_ipc_state, *},
@@ -58,8 +60,8 @@ pub fn restart_clash_core() {
                 handle::Handle::notice_message(&Message::SetConfig(Ok(())));
             }
             Err(err) => {
-                handle::Handle::notice_message(&Message::SetConfig(Err(format!("{err}"))));
-                log::error!(target:"app", "{err}");
+                handle::Handle::notice_message(&Message::SetConfig(Err(format!("{err:?}"))));
+                log::error!(target:"app", "{err:?}");
             }
         }
     });
@@ -83,7 +85,7 @@ pub fn change_clash_mode(mode: String) {
                     log_err!(handle::Handle::update_systray_part());
                 }
             }
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
         if tx.send(()).is_err() {
             log::error!(target: "app::change_clash_mode", "failed to send tx");
@@ -107,7 +109,7 @@ pub fn toggle_system_proxy() {
         .await
         {
             Ok(_) => handle::Handle::refresh_verge(),
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
     });
 }
@@ -122,7 +124,7 @@ pub fn enable_system_proxy() {
         .await
         {
             Ok(_) => handle::Handle::refresh_verge(),
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
     });
 }
@@ -137,7 +139,7 @@ pub fn disable_system_proxy() {
         .await
         {
             Ok(_) => handle::Handle::refresh_verge(),
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
     });
 }
@@ -155,7 +157,7 @@ pub fn toggle_tun_mode() {
         .await
         {
             Ok(_) => handle::Handle::refresh_verge(),
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
     });
 }
@@ -170,7 +172,7 @@ pub fn enable_tun_mode() {
         .await
         {
             Ok(_) => handle::Handle::refresh_verge(),
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
     });
 }
@@ -185,7 +187,7 @@ pub fn disable_tun_mode() {
         .await
         {
             Ok(_) => handle::Handle::refresh_verge(),
-            Err(err) => log::error!(target: "app", "{err}"),
+            Err(err) => log::error!(target: "app", "{err:?}"),
         }
     });
 }
@@ -194,7 +196,7 @@ pub fn disable_tun_mode() {
 pub async fn patch_clash(patch: Mapping) -> Result<()> {
     Config::clash().draft().patch_config(patch.clone());
 
-    let res = {
+    let run = move || async move {
         let mixed_port = patch.get("mixed-port");
         let enable_random_port = Config::verge().latest().enable_random_port.unwrap_or(false);
         if mixed_port.is_some() && !enable_random_port {
@@ -250,6 +252,7 @@ pub async fn patch_clash(patch: Mapping) -> Result<()> {
         }
 
         if patch.get("mode").is_some() {
+            crate::feat::update_proxies_buff(None);
             log_err!(handle::Handle::update_systray_part());
         }
 
@@ -257,7 +260,7 @@ pub async fn patch_clash(patch: Mapping) -> Result<()> {
 
         <Result<()>>::Ok(())
     };
-    match res {
+    match run().await {
         Ok(()) => {
             Config::clash().apply();
             Config::clash().data().save_config()?;
@@ -294,7 +297,37 @@ pub async fn patch_verge(patch: IVerge) -> Result<()> {
         }
 
         if tun_mode.is_some() {
-            update_core_config().await?;
+            log::debug!(target: "app", "toggle tun mode");
+            let mut flag = false;
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                use crate::utils::dirs::check_core_permission;
+                let current_core = Config::verge().data().clash_core.unwrap_or_default();
+                let current_core: nyanpasu_utils::core::CoreType = (&current_core).into();
+                let service_state = crate::core::service::ipc::get_ipc_state();
+                if !service_state.is_connected() && check_core_permission(&current_core).inspect_err(|e| {
+                    log::error!(target: "app", "clash core is not granted the necessary permissions, grant it: {e:?}");
+                }).is_ok_and(|v| !v) {
+                    log::debug!(target: "app", "grant core permission, and restart core");
+                    flag = true;
+                }
+            }
+            let (state, _, _) = CoreManager::global().status().await;
+            if flag || matches!(state.as_ref(), CoreState::Stopped(_)) {
+                log::debug!(target: "app", "core is stopped, restart core");
+                Config::generate().await?;
+                CoreManager::global().run_core().await?;
+            } else {
+                log::debug!(target: "app", "update core config");
+                #[cfg(target_os = "macos")]
+                let _ = CoreManager::global()
+                    .change_default_network_dns(tun_mode.unwrap_or(false))
+                    .await
+                    .inspect_err(
+                        |e| log::error!(target: "app", "failed to set system dns: {:?}", e),
+                    );
+                update_core_config().await?;
+            }
         }
 
         if auto_launch.is_some() {
@@ -346,36 +379,28 @@ pub async fn patch_verge(patch: IVerge) -> Result<()> {
 
 /// 更新某个profile
 /// 如果更新当前配置就激活配置
-pub async fn update_profile(uid: String, option: Option<PrfOption>) -> Result<()> {
-    let url_opt = {
-        let profiles = Config::profiles();
-        let profiles = profiles.latest();
-        let item = profiles.get_item(&uid)?;
-        let is_remote = item.r#type.as_ref().map_or(false, |s| {
-            matches!(s, profile::item_type::ProfileItemType::Remote)
-        });
+pub async fn update_profile<T: Borrow<String>>(
+    uid: T,
+    opts: Option<RemoteProfileOptionsBuilder>,
+) -> Result<()> {
+    let uid = uid.borrow();
+    let is_remote = { Config::profiles().latest().get_item(uid)?.is_remote() };
 
-        if !is_remote {
-            None // 直接更新
-        } else if item.url.is_none() {
-            bail!("failed to get the profile item url");
-        } else {
-            Some((item.url.clone().unwrap(), item.option.clone()))
-        }
-    };
+    let should_update = if is_remote {
+        let mut item = Config::profiles()
+            .latest()
+            .get_item(uid)?
+            .as_remote()
+            .unwrap()
+            .clone();
 
-    let should_update = match url_opt {
-        Some((url, opt)) => {
-            let merged_opt = PrfOption::merge(opt, option);
-            let item = ProfileItem::from_url(&url, None, None, merged_opt).await?;
-
-            let profiles = Config::profiles();
-            let mut profiles = profiles.latest();
-            profiles.update_item(uid.clone(), item)?;
-
-            Some(uid) == profiles.get_current()
-        }
-        None => true,
+        item.subscribe(opts).await?;
+        let committer = Config::profiles().auto_commit();
+        let mut profiles = committer.draft();
+        profiles.replace_item(uid, item.into())?;
+        profiles.get_current().contains(uid)
+    } else {
+        false
     };
 
     if should_update {
@@ -394,7 +419,7 @@ async fn update_core_config() -> Result<()> {
             Ok(())
         }
         Err(err) => {
-            handle::Handle::notice_message(&Message::SetConfig(Err(format!("{err}"))));
+            handle::Handle::notice_message(&Message::SetConfig(Err(format!("{err:?}"))));
             Err(err)
         }
     }

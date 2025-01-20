@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::atomic::AtomicU16};
+use std::borrow::Cow;
 
 use crate::{
     config::{nyanpasu::ClashCore, Config},
@@ -20,6 +20,9 @@ pub mod icon;
 pub mod proxies;
 pub use self::icon::on_scale_factor_changed;
 use self::proxies::SystemTrayMenuProxiesExt;
+
+#[cfg(target_os = "linux")]
+use std::sync::atomic::AtomicU16;
 
 struct TrayState<R: Runtime> {
     menu: Mutex<Menu<R>>,
@@ -242,6 +245,7 @@ impl Tray {
                     .on_tray_icon_event(|tray_icon, event| {
                         Tray::on_system_tray_event(tray_icon, event);
                     })
+                    .menu_on_left_click(false)
                     .build(app_handle)?
             }
             Some(tray) => {
